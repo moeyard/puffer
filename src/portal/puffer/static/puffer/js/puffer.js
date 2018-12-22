@@ -3,6 +3,8 @@
 const WS_OPEN = 1;
 const BASE_RECONNECT_BACKOFF = 250;
 const MAX_RECONNECT_BACKOFF = 10000;
+const WS_MSG_TIMEOUT = 5000;
+const RECONNECT_BUF_LENGTH = 10;
 
 var debug = false;
 var nonsecure = false;
@@ -420,6 +422,8 @@ function WebSocketClient(session_key, username_in, settings_debug,
 
   var channel_error = false;
 
+  var last_msg_ts = Date.now();
+
   this.send_client_init = function(channel) {
     if (fatal_error) {
       return;
@@ -550,6 +554,8 @@ function WebSocketClient(session_key, username_in, settings_debug,
       return;
     }
 
+    last_msg_ts = Date.now();
+
     const msg_ts = e.timeStamp;
     const server_msg = parse_server_msg(e.data);
     var metadata = server_msg.metadata;
@@ -644,6 +650,7 @@ function WebSocketClient(session_key, username_in, settings_debug,
     ws.onmessage = handle_ws_msg;
 
     ws.onopen = function(e) {
+      last_msg_ts = Date.now();
       console.log('Connected to', ws_addr);
       remove_player_error('connect');
 
@@ -826,6 +833,20 @@ function WebSocketClient(session_key, username_in, settings_debug,
     }
   }
   setInterval(send_client_info_timer, 250);
+
+  /* decide whether to drop the connection every 1 sec */
+  function check_autodrop() {
+    if (fatal_error || !(ws && ws.readyState === WS_OPEN)) {
+      return;
+    }
+
+    if ((Date.now() - last_msg_ts) > WS_MSG_TIMEOUT &&
+        (!av_source || !av_source.isOpen() ||
+         av_source.getVideoBuffer() <= RECONNECT_BUF_LENGTH)) {
+       ws.close();
+    }
+  }
+  setInterval(check_autodrop, 1000);
 
   /* update debug info every 500 ms */
   function update_debug_info() {
