@@ -42,7 +42,6 @@ static map<string, shared_ptr<Channel>> channels;  /* key: channel name */
 static map<uint64_t, WebSocketClient> clients;  /* key: connection ID */
 
 static const size_t MAX_WS_FRAME_B = 100 * 1024;  /* 10 KB */
-static const unsigned int DROP_NOTIFICATION_MS = 30000;
 static const unsigned int MAX_IDLE_MS = 60000;
 
 /* for logging */
@@ -352,15 +351,9 @@ void start_slow_timer(Timerfd & slow_timer, WebSocketServer & server)
         if (last_msg_recv_ts) {
           const auto elapsed = timestamp_ms() - *last_msg_recv_ts;
 
-          assert(MAX_IDLE_MS > DROP_NOTIFICATION_MS);
           if (elapsed > MAX_IDLE_MS) {
             connections_to_clean.emplace(connection_id);
             cerr << client.signature() << ": cleaned idle connection" << endl;
-            continue;
-          } else if (elapsed > DROP_NOTIFICATION_MS) {
-            /* notify that the connection is going to be dropped */
-            send_server_error(server, client, ServerErrorMsg::Type::Drop);
-            cerr << client.signature() << ": notified client to drop" << endl;
             continue;
           }
         }
