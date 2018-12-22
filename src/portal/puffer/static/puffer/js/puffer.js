@@ -424,6 +424,25 @@ function WebSocketClient(session_key, username_in, settings_debug,
 
   var last_msg_ts = Date.now();
 
+  /* add block button */
+  var block_button = document.getElementById('block-button');
+  var block_msg = false;
+
+  block_button.onclick = function() {
+    block_msg = !block_msg;
+  }
+
+  /* add pause button */
+  var pause_button = document.getElementById('pause-button');
+
+  pause_button.onclick = function() {
+    if (video.paused) {
+      video.play();
+    } else {
+      video.pause();
+    }
+  }
+
   this.send_client_init = function(channel) {
     if (fatal_error) {
       return;
@@ -550,6 +569,11 @@ function WebSocketClient(session_key, username_in, settings_debug,
 
   /* handle a WebSocket message from the server */
   function handle_ws_msg(e) {
+    /* add pause buttom */
+    if (block_msg) {
+      return;
+    }
+
     if (fatal_error) {
       return;
     }
