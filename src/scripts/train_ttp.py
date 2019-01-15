@@ -21,7 +21,7 @@ PKT_BYTES = 1500
 MILLION = 1000000
 
 # training related
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 NUM_EPOCHS = 100
 
 TUNING = False
@@ -35,16 +35,19 @@ class Model:
     BIN_SIZE = 0.5  # seconds
     BIN_MAX = 20
     DIM_OUT = BIN_MAX + 1
-    DIM_H = 40
-    WEIGHT_DECAY = 1e-3
-    LEARNING_RATE = 1e-3
+    DIM_H1 = 64
+    DIM_H2 = 64
+    WEIGHT_DECAY = 1e-4
+    LEARNING_RATE = 1e-4
 
     def __init__(self, model_path=None):
         # define model, loss function, and optimizer
         self.model = torch.nn.Sequential(
-            torch.nn.Linear(Model.DIM_IN, Model.DIM_H),
+            torch.nn.Linear(Model.DIM_IN, Model.DIM_H1),
             torch.nn.ReLU(),
-            torch.nn.Linear(Model.DIM_H, Model.DIM_OUT),
+            torch.nn.Linear(Model.DIM_H1, Model.DIM_H2),
+            torch.nn.ReLU(),
+            torch.nn.Linear(Model.DIM_H2, Model.DIM_OUT),
         ).double().to(device=DEVICE)
         self.loss_fn = torch.nn.CrossEntropyLoss().to(device=DEVICE)
         self.optimizer = torch.optim.Adam(self.model.parameters(),
@@ -453,6 +456,23 @@ def plot_loss(losses, figure_path):
     sys.stderr.write('Saved plot to {}\n'.format(figure_path))
 
 
+def plot_ac(losses, figure_path):
+    fig, ax = plt.subplots()
+
+    if 'train_ac' in losses:
+        ax.plot(losses['train_ac'], 'g--', label='training')
+    if 'validate_ac' in losses:
+        ax.plot(losses['validate_ac'], 'r-', label='validation')
+
+    ax.set_xlabel('Epoch')
+    ax.set_ylabel('Accuracy (%)')
+    ax.grid()
+    ax.legend()
+
+    fig.savefig(figure_path, dpi=300, bbox_inches='tight', pad_inches=0.2)
+    sys.stderr.write('Saved plot to {}\n'.format(figure_path))
+
+
 def train(i, model, input_data, output_data):
     if TUNING:
         # permutate input and output data before splitting
@@ -472,6 +492,8 @@ def train(i, model, input_data, output_data):
                          .format(i, len(validate_input)))
 
         validate_losses = []
+        train_ac = []
+        validate_ac = []
     else:
         num_training = len(input_data)
         sys.stderr.write('[{}] training set size: {}\n'
@@ -512,6 +534,8 @@ def train(i, model, input_data, output_data):
                     train_input, train_output)
             validate_accuracy = 100 * model.compute_accuracy(
                     validate_input, validate_output)
+            train_ac.append(train_accuracy)
+            validate_ac.append(100 * validate_accuracy)
 
             sys.stderr.write('[{}] epoch {}:\n'
                              '\ttraining: loss {:.3f}, accuracy {:.2f}%\n'
@@ -521,7 +545,7 @@ def train(i, model, input_data, output_data):
                                      validate_loss, validate_accuracy))
         else:
             train_losses.append(running_loss)
-            sys.stderr.write('[{}} epoch {}: training loss {:.3f}\n'
+            sys.stderr.write('[{}] epoch {}: training loss {:.3f}\n'
                              .format(i, epoch_id + 1, running_loss))
 
     # return losses for plotting
@@ -529,6 +553,8 @@ def train(i, model, input_data, output_data):
     losses['training'] = train_losses
     if TUNING:
         losses['validation'] = validate_losses
+        losses['train_ac'] = train_ac
+        losses['validate_ac'] = validate_ac
     return losses
 
 
@@ -583,6 +609,7 @@ def train_or_eval_model(i, args, raw_in_data, raw_out_data):
 
 
         plot_loss(losses, 'loss{}.png'.format(i))
+        plot_ac(losses, 'ac{}.png'.format(i))
 
 
 def main():
