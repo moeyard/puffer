@@ -2,6 +2,7 @@
 
 import os
 import yaml
+import math
 import time
 import argparse
 import signal
@@ -81,7 +82,7 @@ def main():
 
         print('Sleeping until {} (UTC) to perform continual learning'
               .format(wakeup))
-        time.sleep((wakeup - td).total_seconds())
+        time.sleep(math.ceil((wakeup - td).total_seconds()))
 
         # perform continual learning!
         run_ttp(ttp_path, yaml_settings_path)

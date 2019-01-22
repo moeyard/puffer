@@ -82,14 +82,13 @@ def collect_rebuffer(client_buffer_results, postgres_cursor):
         if y['max_cum_rebuf'] is None or cum_rebuf > y['max_cum_rebuf']:
             y['max_cum_rebuf'] = cum_rebuf
 
-    # calculate rebuffer rate
+    # calculate 95th percentile rebuffer rate
     rebuffer = {}
     total_play = {}
-    total_rebuf = {}
 
     for abr_cc in x:
         abr_cc_play = 0
-        abr_cc_rebuf = 0
+        rebuf_rate = []
 
         for session in x[abr_cc]:
             y = x[abr_cc][session]  # short name
@@ -100,42 +99,35 @@ def collect_rebuffer(client_buffer_results, postgres_cursor):
             sess_play = (y['max_play_time'] - y['min_play_time']).total_seconds()
             sess_rebuf = y['max_cum_rebuf'] - y['min_cum_rebuf']
 
-            # exclude too short sessions
+            # exclude short sessions
             if sess_play < 2:
                 continue
 
-            # TODO: identify and ignore outliers
-            if sess_rebuf / sess_play > 0.5:
-                continue
-
             abr_cc_play += sess_play
-            abr_cc_rebuf += sess_rebuf
+            rebuf_rate.append(sess_rebuf / sess_play)
 
         if abr_cc_play == 0:
             sys.exit('Error: {}: total play time is 0'.format(abr_cc))
 
+        rebuffer[abr_cc] = np.percentile(rebuf_rate, 95) * 100  # %
         total_play[abr_cc] = abr_cc_play
-        total_rebuf[abr_cc] = abr_cc_rebuf
 
-        rebuf_rate = abr_cc_rebuf / abr_cc_play
-        rebuffer[abr_cc] = rebuf_rate * 100
-
-    return rebuffer, total_play, total_rebuf
+    return rebuffer, total_play
 
 
-def plot_ssim_rebuffer(ssim, rebuffer, total_play, total_rebuf, output, days):
-    time_str = '%Y-%m-%d'
+def plot_ssim_rebuffer(ssim, rebuffer, total_play, output, days):
+    time_str = '%Y-%m-%dT%H'
     curr_ts = datetime.utcnow()
     start_ts = curr_ts - timedelta(days=days)
     curr_ts_str = curr_ts.strftime(time_str)
     start_ts_str = start_ts.strftime(time_str)
 
-    title = ('Performance in [{}, {}) (UTC)'
+    title = ('[{}, {}] (UTC)'
              .format(start_ts_str, curr_ts_str))
 
     fig, ax = plt.subplots()
     ax.set_title(title)
-    ax.set_xlabel('Time spent stalled (%)')
+    ax.set_xlabel('95th percentile rebuffer rate (%)')
     ax.set_ylabel('Average SSIM (dB)')
     ax.grid()
 
@@ -145,8 +137,7 @@ def plot_ssim_rebuffer(ssim, rebuffer, total_play, total_rebuf, output, days):
             sys.exit('Error: {} does not exist both ssim and rebuffer'
                      .format(abr_cc_str))
 
-        abr_cc_str += '\n({:.1f}h/{:.1f}h)'.format(total_rebuf[abr_cc] / 3600,
-                                                   total_play[abr_cc] / 3600)
+        abr_cc_str += '\n({:.1f}h)'.format(total_play[abr_cc] / 3600)
 
         x = rebuffer[abr_cc]
         y = ssim[abr_cc]
@@ -194,14 +185,14 @@ def main():
 
     # collect ssim and rebuffer
     ssim = collect_ssim(video_acked_results, postgres_cursor)
-    rebuffer, total_play, total_rebuf = collect_rebuffer(
+    rebuffer, total_play = collect_rebuffer(
         client_buffer_results, postgres_cursor)
 
     if not ssim or not rebuffer:
         sys.exit('Error: no data found in the queried range')
 
     # plot ssim vs rebuffer
-    plot_ssim_rebuffer(ssim, rebuffer, total_play, total_rebuf, output, days)
+    plot_ssim_rebuffer(ssim, rebuffer, total_play, output, days)
 
     postgres_cursor.close()
 
